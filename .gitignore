@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+data/**
+logs/
+wandb/
+runs/
+
+# large binaries ignored by default
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+
+# allow only these two exports (they will go via LFS)
+!models/exports/model_traced.pt
+!models/exports/model.onnx
