@@ -1,0 +1,10 @@
+preferred_backend: "onnx"   # use ONNX for speed and to avoid torch issues
+device: "cpu"
+max_length: 128
+tokenizer_name: "roberta-base"
+
+models:
+  combined:
+    onnx: "exports/model.onnx"
+    torchscript: "exports/model_traced.pt"
+    hf_dir: "roberta_saved"   # optional fallback if needed

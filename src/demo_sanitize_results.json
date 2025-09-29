@@ -1,0 +1,57 @@
+[
+  {
+    "input": "I hate you",
+    "result": {
+      "raw": "I hate you",
+      "pre": "I hate you",
+      "spans": [],
+      "ml_prob": 0.9882489442825317,
+      "action": "enforce",
+      "sanitized": "I hate you"
+    }
+  },
+  {
+    "input": "You are a b!i!t!c!h and an a--s--s",
+    "result": {
+      "raw": "You are a b!i!t!c!h and an a--s--s",
+      "pre": "You are a b!i!t!c!h and an a--s--s",
+      "spans": [],
+      "ml_prob": 0.9847105145454407,
+      "action": "enforce",
+      "sanitized": "You are a b!i!t!c!h and an a--s--s"
+    }
+  },
+  {
+    "input": "Have a nice day",
+    "result": {
+      "raw": "Have a nice day",
+      "pre": "Have a nice day",
+      "spans": [],
+      "ml_prob": 0.0023344382643699646,
+      "action": "pass",
+      "sanitized": "Have a nice day"
+    }
+  },
+  {
+    "input": "That s l u r is bad",
+    "result": {
+      "raw": "That s l u r is bad",
+      "pre": "That s l u r is bad",
+      "spans": [],
+      "ml_prob": 0.907329797744751,
+      "action": "enforce",
+      "sanitized": "That s l u r is bad"
+    }
+  },
+  {
+    "input": "I will kill you",
+    "result": {
+      "raw": "I will kill you",
+      "pre": "I will kill you",
+      "spans": [],
+      "ml_prob": 0.9891263246536255,
+      "action": "enforce",
+      "sanitized": "I will kill you"
+    }
+  }
+]
