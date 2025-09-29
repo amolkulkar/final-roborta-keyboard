@@ -1,0 +1,10 @@
+preferred_backend: "onnx"
+device: "cpu"
+max_length: 128
+tokenizer_name: "roberta-base"
+
+models:
+  combined:
+    onnx: "models/exports/model.onnx"
+    torchscript: "models/exports/model_traced.pt"
+    hf_dir: "models/roberta_saved"

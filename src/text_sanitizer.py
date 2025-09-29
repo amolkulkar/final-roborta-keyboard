@@ -1,60 +1,72 @@
-import re
-from typing import List, Dict, Union
+from typing import Dict, List, Tuple
 
 from preprocess import preprocess
 from word_match import find_exact
 from fuzzy_match import find_fuzzy
 from sentence_model import SentenceModel
+from escalation import Escalator
+from suggestions import generate_suggestions
+
+
+Span = Tuple[int, int, str, str]  
 
 
 class TextSanitizer:
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml",
+                 th_suggest: float = 0.50, th_warn: float = 0.70, th_enforce: float = 0.90):
+
         self.model = SentenceModel("combined", config_path=config_path)
+        self.esc = Escalator(th_suggest, th_warn, th_enforce)
+
+    def _mask(self, raw: str, spans: List[Span], ch: str = "*") -> str:
+        if not spans:
+            return raw
+        chars = list(raw)
+        for st, ed, _, _ in spans:
+            st = max(0, min(st, len(chars)))
+            ed = max(st, min(ed, len(chars)))
+            for i in range(st, ed):
+                chars[i] = ch
+        return "".join(chars)
 
     def analyze(self, text: str) -> Dict:
+       
         pre = preprocess(text)
-
         spans_exact = find_exact(pre)
         spans_fuzzy = find_fuzzy(pre)
-        spans = spans_exact + spans_fuzzy
+        spans: List[Span] = spans_exact + spans_fuzzy
 
-        ml_out = self.model.predict(pre)
-        prob = float(ml_out["prob"]) if isinstance(ml_out, dict) else float(ml_out[0]["prob"])
+        ml = self.model.predict(pre)
+        prob = float(ml["prob"]) if isinstance(ml, dict) else float(ml[0]["prob"])
 
-        if prob >= 0.9:
-            action = "enforce"
-        elif prob >= 0.7:
-            action = "warn"
-        elif prob >= 0.5:
-            action = "suggest"
-        else:
-            action = "pass"
+        action = self.esc.step(key=pre, prob=prob)
+        level = prob  
 
-        sanitized = list(text)
-        for (start, end, term, kind) in spans:
-            for i in range(start, end):
-                sanitized[i] = "*"
-        sanitized = "".join(sanitized)
+        suggestions = generate_suggestions(text, spans)
+
+        sanitized = self._mask(text, spans)
 
         return {
             "raw": text,
             "pre": pre,
             "spans": spans,
-            "ml_prob": prob,
+            "raw_probs": {"combined": prob},
+            "ml_prob": prob,                 # ← add this
             "action": action,
+            "level": level,
+            "suggestions": suggestions,
             "sanitized": sanitized,
         }
 
 
+
 if __name__ == "__main__":
     s = TextSanitizer()
-    samples = [
-        "You are b!tch",
+    for t in [
         "I hate you",
+        "You are a b!i!t!c!h and an a--s--s",
         "Have a nice day",
-    ]
-    for t in samples:
-        out = s.analyze(t)
-        print("IN :", t)
-        print("OUT:", out)
-        print("-" * 40)
+        "That s l u r is bad",
+        "I will kill you",
+    ]:
+        print(s.analyze(t))

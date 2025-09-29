@@ -85,7 +85,7 @@ if __name__ == "__main__":
         "You are b!i!t!c!h and a--s--s",
         "That s l u r is bad",
         "k-i-l-l threats are violent",
-        "you and b i t c h",
+        "you and b i t c h.",
         "f u c k e r is written with spaces",
         "b!o!o!b!s"
     ]

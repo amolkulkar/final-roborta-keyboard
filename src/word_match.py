@@ -19,5 +19,5 @@ def find_exact(text: str) -> List[Tuple[int,int,str,str]]:
     return matches
 
 if __name__ == "__main__":
-    s = "You are a bitch and an ass."
+    s = "You are a bitch and an ass"
     print(find_exact(s))

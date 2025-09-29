@@ -26,7 +26,7 @@ def preprocess(text: str) -> str:
     return t
 
 if __name__ == "__main__":
-    s = "LoOOOove \n this!" \
+    s = "LoOOOove \n this!." \
      
     print("Input:", s)
     print("Output:", preprocess(s))

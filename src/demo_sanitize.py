@@ -16,7 +16,7 @@ SAMPLE_SENTENCES = [
     "You are a b!i!t!c!h and an a--s--s",
     "Have a nice day",
     "That s l u r is bad",
-    "I will kill you"
+    "I will kill you."
 ]
 
 
