@@ -1,0 +1,15 @@
+{
+  "dataset": "data\\combined_cleaned_dataset.csv",
+  "rows": 1000,
+  "counts": {
+    "pass": 500,
+    "enforce": 423,
+    "warn": 72,
+    "suggest": 5
+  },
+  "accuracy": 0.97,
+  "precision": 0.958,
+  "recall": 0.9815573770491803,
+  "f1": 0.9696356275303644,
+  "timestamp": "2025-10-01T22:30:23.086707"
+}

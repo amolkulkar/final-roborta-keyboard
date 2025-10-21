@@ -153,13 +153,15 @@ class SentenceModel:
         )
 
     def _prepare(self, texts: List[str]):
-        return self.tokenizer(
+    # Return plain Python lists to avoid any torch/TF/Flax dependency.
+        enc = self.tokenizer(
             texts,
             padding=True,
             truncation=True,
             max_length=self.max_length,
-            return_tensors="pt"
+            return_tensors=None   # was "pt"
         )
+        return enc
 
     @staticmethod
     def _softmax(x: np.ndarray) -> np.ndarray:

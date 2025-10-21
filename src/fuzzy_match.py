@@ -1,99 +1,40 @@
-
+# src/fuzzy_match.py
 import re
-import os
 from typing import List, Tuple
 
-WORDLIST_DIR = os.environ.get("TOXIFILTER_WORDLIST_DIR", "data/wordlists")
-TOXIC_FILE = os.path.join(WORDLIST_DIR, "toxic.txt")
-SEXUAL_FILE = os.path.join(WORDLIST_DIR, "sexual.txt")
+Span = Tuple[int, int, str, str]  # (start, end, token, kind)
 
-LEET_MAP = {
-    "a": ["a", "@", "4"],
-    "b": ["b", "8"],
-    "e": ["e", "3"],
-    "i": ["i", "1", "l", "!"],
-    "l": ["l", "1", "i"],
-    "o": ["o", "0"],
-    "s": ["s", r"\$","5"],
-    "t": ["t", "7"],
-    "g": ["g", "9"],
-    "c": ["c", "("],
-    "k": ["k", "|<"]
+# core toxic terms (extend later via lexicon)
+BASE_TOXIC = {
+    "bitch","ass","fuck","idiot","bastard","slur","kill","moron","stupid","dumb"
 }
 
-def read_wordlist(path: str) -> List[str]:
-    if not os.path.exists(path):
-        return []
-    words = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            w = line.strip()
-            if not w or w.startswith("#"):
-                continue
-            words.append(w.lower())
-    return words
+LEET = str.maketrans({
+    "a":"a@4","b":"b8","c":"c(","e":"e3","g":"g9","i":"i1!","l":"l1|","o":"o0",
+    "s":"s$5","t":"t7","+":"t","z":"z2"
+})
 
-def letter_group(ch: str) -> str:
-    ch_low = ch.lower()
-    if ch_low in LEET_MAP:
-        chars = [re.escape(x) for x in LEET_MAP[ch_low]]
-        if re.escape(ch_low) not in chars:
-            chars.insert(0, re.escape(ch_low))
-        return "(?:" + "|".join(chars) + ")"
-    return re.escape(ch_low)
-
-def make_fuzzy_regex(word: str) -> str:
+def _gap_regex(word: str) -> str:
+    # allow up to 2 non-alnum between letters: handles b i t c h, b!tch, b---itch, etc.
     parts = []
     for ch in word:
-        parts.append(letter_group(ch))
-    sep = r"(?:[\W_]*)"
-    pattern = sep.join(parts)
-    return pattern
+        # leet pool for this letter
+        pool = re.escape(ch) + re.escape(LEET.get(ch, ch)).replace("\\", "")
+        parts.append(f"[{pool}]+")
+    sep = r"[^A-Za-z0-9]{0,2}"
+    return r"\b" + sep.join(parts) + r"\b"
 
-def compile_patterns(words: List[str]):
-    pats = []
-    for w in words:
-        if not w or len(w) < 2:
-            continue
-        try:
-            p = re.compile(make_fuzzy_regex(w), flags=re.IGNORECASE)
-            pats.append((w, p))
-        except re.error:
-            pats.append((w, re.compile(re.escape(w), flags=re.IGNORECASE)))
-    return pats
+# compile once
+_PATTERNS = [re.compile(_gap_regex(w), re.IGNORECASE) for w in BASE_TOXIC]
 
-TOXIC_WORDS = read_wordlist(TOXIC_FILE)
-SEXUAL_WORDS = read_wordlist(SEXUAL_FILE)
-
-TOXIC_PATTERNS = compile_patterns(TOXIC_WORDS)
-SEXUAL_PATTERNS = compile_patterns(SEXUAL_WORDS)
-
-def find_fuzzy(text: str) -> List[Tuple[int, int, str, str]]:
-    matches = []
-    if not text:
-        return matches
-
-    for src, patterns in (("fuzzy_sexual", SEXUAL_PATTERNS), ("fuzzy_toxic", TOXIC_PATTERNS)):
-        for base_word, rx in patterns:
-            for m in rx.finditer(text):
-                matches.append((m.start(), m.end(), m.group(0), src))
-    matches.sort(key=lambda x: (x[0], -x[1]))
-    return matches
+def find_fuzzy(text: str) -> List[Span]:
+    spans: List[Span] = []
+    for pat in _PATTERNS:
+        for m in pat.finditer(text):
+            spans.append((m.start(), m.end(), m.group(0), "fuzzy"))
+    return spans
 
 if __name__ == "__main__":
-    samples = [
-        "You are b!i!t!c!h and a--s--s",
-        "That s l u r is bad",
-        "k-i-l-l threats are violent",
-        "you and b i t c h.",
-        "f u c k e r is written with spaces",
-        "b!o!o!b!s"
-    ]
-    if not TOXIC_WORDS and not SEXUAL_WORDS:
-        print("Warning: wordlists empty. Creating temporary example patterns.")
-        TOXIC_PATTERNS = compile_patterns(["ass","bitch","fucker","slur"])
-        SEXUAL_PATTERNS = compile_patterns(["sexual_term"])
-    for t in samples:
-        print("INPUT:", t)
-        print(find_fuzzy(t))
-        print("-" * 40)
+    print(find_fuzzy("you are a b i t c h"))
+    print(find_fuzzy("that s l u r is bad"))
+    print(find_fuzzy("you are a m0r0n"))

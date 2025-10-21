@@ -1,0 +1,7 @@
+# thresholds.yaml — tuned after evaluation
+prob_gate: 0.50   # below this, always pass
+
+escalation:
+  suggest: 0.50   # 0.50 ≤ prob < 0.75 → suggest
+  warn: 0.75      # 0.75 ≤ prob < 0.97 → warn
+  enforce: 0.97   # prob ≥ 0.97 → enforce

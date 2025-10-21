@@ -1,0 +1,111 @@
+[
+  {
+    "input": "I hate you.",
+    "result": {
+      "ml_prob": 0.9954288005828857,
+      "spans": [
+        [
+          2,
+          6,
+          "hate",
+          "exact"
+        ]
+      ],
+      "action": "enforce",
+      "suggestions": [
+        "I hate you.",
+        "I **** you.",
+        "[removed]"
+      ],
+      "sanitized": "I hate you."
+    }
+  },
+  {
+    "input": "You are a b!i!t!c!h and an a--s--s",
+    "result": {
+      "ml_prob": 0.99732506275177,
+      "spans": [
+        [
+          10,
+          19,
+          "b!i!t!c!h",
+          "fuzzy"
+        ],
+        [
+          27,
+          34,
+          "a--s--s",
+          "fuzzy"
+        ]
+      ],
+      "action": "enforce",
+      "suggestions": [
+        "You are a b!i!t!c!h and an a--s--s",
+        "You are a ********* and an *******",
+        "[removed]"
+      ],
+      "sanitized": "You are a b!i!t!c!h and an a--s--s"
+    }
+  },
+  {
+    "input": "Have a nice day",
+    "result": {
+      "ml_prob": 0.006297455634921789,
+      "spans": [],
+      "action": "pass",
+      "suggestions": [
+        "Have a nice day",
+        "[removed]"
+      ],
+      "sanitized": "Have a nice day"
+    }
+  },
+  {
+    "input": "That s l u r is bad",
+    "result": {
+      "ml_prob": 0.9451625943183899,
+      "spans": [
+        [
+          5,
+          12,
+          "s l u r",
+          "fuzzy"
+        ]
+      ],
+      "action": "enforce",
+      "suggestions": [
+        "That s l u r is bad",
+        "That term is bad",
+        "[removed]"
+      ],
+      "sanitized": "That s l u r is bad"
+    }
+  },
+  {
+    "input": "I will kill you",
+    "result": {
+      "ml_prob": 0.9967836141586304,
+      "spans": [
+        [
+          7,
+          11,
+          "kill",
+          "exact"
+        ],
+        [
+          7,
+          11,
+          "kill",
+          "fuzzy"
+        ]
+      ],
+      "action": "enforce",
+      "suggestions": [
+        "I will kill you",
+        "I will **** you",
+        "[removed]"
+      ],
+      "sanitized": "I will kill you"
+    }
+  }
+]
