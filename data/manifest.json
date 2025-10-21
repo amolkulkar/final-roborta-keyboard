@@ -1,0 +1,74 @@
+{
+  "project": "toxifilter",
+  "phase": "T",
+  "generated_at": "2025-09-26",
+  "dataset": {
+    "name": "OLID + Jigsaw + sexual (cleaned, combined)",
+    "files": ["data/raw/cleaned_dataset (1).csv"],
+    "samples": 51088,
+    "columns": ["text", "label"],
+    "label_map": {"0": "non_toxic", "1": "toxic"},
+    "hashes": {
+      "data/raw/cleaned_dataset (1).csv": "sha256:REPLACE_DATA_HASH"
+    }
+  },
+  "training": {
+    "model_arch": "roberta-base",
+    "framework": "transformers",
+    "seed": 42,
+    "epochs": 4,
+    "batch_size": 32,
+    "learning_rate": 2e-5,
+    "class_weights": {"non_toxic": 0.852, "toxic": 1.209},
+    "loss_fn": "CrossEntropyLoss",
+    "device": "cuda"
+  },
+  "metrics": {
+    "split": "test",
+    "accuracy": 0.894,
+    "precision": 0.856,
+    "recall": 0.899,
+    "f1": 0.877,
+    "confusion_matrix": {"tn": 2638, "fp": 324, "fn": 216, "tp": 1931}
+  },
+  "epoch_summary": [
+    {"epoch": 1, "train_loss": 0.2719, "val_loss": 0.3088, "accuracy": 0.8875, "precision": 0.8220, "recall": 0.9190, "f1": 0.8710, "tn": 2593, "fp": 403, "fn": 172, "tp": 1941},
+    {"epoch": 2, "train_loss": 0.2227, "val_loss": 0.3855, "accuracy": 0.8898, "precision": 0.8239, "recall": 0.9252, "f1": 0.8741, "tn": 2591, "fp": 405, "fn": 158, "tp": 1955},
+    {"epoch": 3, "train_loss": 0.1550, "val_loss": 0.3462, "accuracy": 0.8899, "precision": 0.8547, "recall": 0.9106, "f1": 0.8818, "tn": 2669, "fp": 327, "fn": 189, "tp": 1924},
+    {"epoch": 4, "train_loss": 0.2080, "val_loss": 0.4328, "accuracy": 0.8973, "precision": 0.8523, "recall": 0.9086, "f1": 0.8794, "tn": 2666, "fp": 330, "fn": 193, "tp": 1920}
+  ],
+  "exports": [
+    {
+      "file": "model/model_traced.pt",
+      "format": "torchscript",
+      "hash": "sha256:REPLACE_TS_HASH",
+      "export_cmd": "python export.py --format torchscript --out model/model_traced.pt"
+    },
+    {
+      "file": "model/model.onnx",
+      "format": "onnx",
+      "hash": "sha256:REPLACE_ONNX_HASH",
+      "export_cmd": "python export.py --format onnx --out model/model.onnx"
+    },
+    {
+      "folder": "model/hf_model/",
+      "format": "huggingface",
+      "contents": ["config.json", "model.safetensors", "tokenizer.json", "merges.txt", "special_tokens_map.json"]
+    }
+  ],
+  "environment": {
+    "python": "3.10",
+    "torch": "REPLACE",
+    "transformers": "REPLACE",
+    "onnxruntime": "REPLACE",
+    "notes": "Pin exact versions via pip-freeze or Dockerfile; record git commit SHA."
+  },
+  "integrity": {
+    "model_checksums_file": "model/archive/checksums.txt"
+  },
+  "repro": {
+    "train_cmd": "python train.py --data data/merged/train.csv --val data/merged/val.csv --model roberta-base --epochs 4 --batch_size 32 --lr 2e-5 --seed 42 --class-weights 0.852 1.209",
+    "eval_cmd": "python evaluate.py --data data/merged/test.csv --checkpoint model/hf_model/",
+    "notes": "Use the tokenizer from model/hf_model for all inference paths."
+  }
+}
