@@ -1,0 +1,24 @@
+# ---- Core NLP & Model Dependencies ----
+transformers>=4.44
+tokenizers>=0.19
+onnxruntime>=1.16.0
+torch>=2.0.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+
+# ---- Keyboard Hook & Runtime ----
+pynput>=1.7.6
+pywin32>=306
+psutil>=5.9.0
+
+# ---- Config & Data Utilities ----
+pyyaml>=6.0
+tqdm>=4.66.0
+pandas>=2.2.0
+
+# ---- Packaging / Build ----
+pyinstaller>=6.0.0
+
+# ---- Optional (for evaluation, logging, visualization) ----
+matplotlib>=3.8.0
+rich>=13.7.0
