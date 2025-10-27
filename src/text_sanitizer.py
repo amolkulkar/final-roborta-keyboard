@@ -7,7 +7,6 @@ from word_match import find_exact
 from fuzzy_match import find_fuzzy
 from sentence_model import SentenceModel
 from escalation import Escalator
-from suggestions import generate_suggestions
 
 # optional helpers from fuzzy_match
 try:
@@ -16,7 +15,7 @@ except Exception:
     BASE_TOXIC = {
         "bitch", "ass", "fuck", "idiot", "bastard", "slur", "kill",
         "moron", "stupid", "dumb", "dickhead", "scumbag", "bullshit",
-        "pussy", "boobs", "cock", "penis", "vagina", "fucker", "sex","porn"
+        "pussy", "boobs", "cock", "penis", "vagina", "fucker", "sex", "porn"
     }
 
     def _normalize_token(x: str) -> str:
@@ -62,30 +61,26 @@ def _normalize_word(tok: str) -> str:
 
 def _token_is_suspicious(tok: str) -> bool:
     """
-    Conservative heuristic to mark tokens likely to be the toxic term.
-    - Excludes stopwords and common verbs.
-    - Excludes single-character tokens (e.g., 'u').
+    Mark tokens likely to be the toxic term.
+    - Excludes stopwords and very common verbs.
+    - Excludes single-character tokens.
     - Accepts near-toxic matches, obfuscated tokens, and uncommon long tokens.
     """
     norm = _normalize_word(tok)
     if not norm:
         return False
-    # quickly exclude single-char tokens and chat abbreviations
     if len(norm) <= 1:
         return False
     if norm in _STOPWORDS or norm in _HIGH_FREQ_HARMS:
         return False
 
-    # strong signal: near/toxic match
     for tox in BASE_TOXIC:
         if _ed1(norm, tox) or tox in norm or norm in tox:
             return True
 
-    # obfuscated / non-alnum tokens
     if re.search(r"[^a-z0-9]", tok.lower()):
         return True
 
-    # long uncommon tokens
     if len(norm) >= 5 and norm not in _HIGH_FREQ_HARMS:
         return True
 
@@ -119,7 +114,7 @@ def _merge_spans(spans: List[Span]) -> List[Span]:
 
 def _refine_spans_to_tokens(raw: str, spans: List[Span]) -> List[Span]:
     """
-    Replace ML spans with internal suspicious-token spans where possible.
+    Replace ML spans with suspicious-token spans where possible.
     Keeps original span when no suspicious token found.
     """
     if not spans:
@@ -141,7 +136,7 @@ def _refine_spans_to_tokens(raw: str, spans: List[Span]) -> List[Span]:
         if token_spans:
             refined.extend(token_spans)
         else:
-            # fallback: try substring fallback (match base toxic substring inside span)
+            # fallback: try substring match to base toxic list
             for m in re.finditer(r"\S+", inner):
                 s = st + m.start()
                 e = st + m.end()
@@ -171,12 +166,17 @@ class TextSanitizer:
                 chars[i] = ch
         return "".join(chars)
 
-    def _ml_localize_spans(self, raw: str, base_prob: float,
-                          drop_threshold: float = 0.10, shrink_ratio: float = 0.8) -> List[Span]:
+    def _ml_localize_spans(
+        self,
+        raw: str,
+        base_prob: float,
+        drop_threshold: float = 0.10,
+        shrink_ratio: float = 0.8,
+    ) -> List[Span]:
         """
         Candidate masking over 1..3 word windows.
         Require at least one suspicious token in window.
-        Require drop > drop_threshold to accept candidate.
+        Accept if prob drop > drop_threshold.
         Return top non-overlapping windows.
         """
         words = re.findall(r"\S+", raw)
@@ -257,10 +257,12 @@ class TextSanitizer:
     def analyze(self, text: str) -> Dict:
         pre = preprocess(text)
 
+        # regex spans
         spans_exact = find_exact(pre)
         spans_fuzzy = find_fuzzy(pre)
         spans: List[Span] = _merge_spans(spans_exact + spans_fuzzy)
 
+        # ML score
         ml = self.model.predict(pre)
         prob = float(ml["prob"]) if isinstance(ml, dict) else float(ml[0]["prob"])
 
@@ -272,14 +274,12 @@ class TextSanitizer:
             if not spans and prob >= 0.98:
                 spans = self._heuristic_token_pick(text)
 
-        # refine ML spans to suspicious tokens (avoid removing function words)
+        # refine ML spans to suspicious tokens
         spans = _refine_spans_to_tokens(text, spans)
         spans = _merge_spans(spans)
 
         action = self.esc.step(key=pre, prob=prob)
         level = prob
-
-        suggestions = generate_suggestions(text, spans)
         sanitized = self._mask(text, spans)
 
         # Debug logs
@@ -288,7 +288,6 @@ class TextSanitizer:
         print("[DEBUG] RAW spans:", spans)
         print("[DEBUG] ML prob:", prob)
         print("[DEBUG] Escalation decision:", action)
-        print("[DEBUG] Suggestions:", suggestions)
         print("[DEBUG] Sanitized output:", sanitized)
 
         return {
@@ -299,7 +298,6 @@ class TextSanitizer:
             "ml_prob": prob,
             "action": action,
             "level": level,
-            "suggestions": suggestions,
             "sanitized": sanitized,
         }
 
@@ -312,7 +310,7 @@ if __name__ == "__main__":
         "i like your boobs",
         "i love your sperm",
         "Have a nice day",
-        "you are so sexy"
+        "you are so sexy",
     ]
     for t in tests:
         print(s.analyze(t))

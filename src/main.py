@@ -1,192 +1,234 @@
-# src/main.py
-import argparse
-import json
-import logging
-import os
-import runpy
-import signal
+# src/keyboard_hook.py
 import sys
+import threading
 import time
-from typing import Optional
+from typing import List, Tuple, Dict
+from keyboard_hook import run_hook
 
-try:
-    import yaml
-except Exception:
-    yaml = None  # optional; used only for nicer config loading
-
-# local imports (project)
-# Note: these modules must exist in src/
-try:
-    from tools.generate_checksums import verify_checksums_from_file  # optional helper (if present)
-except Exception:
-    verify_checksums_from_file = None
-
-# keyboard hook API (must expose run_hook() -> thread with .stop())
-from keyboard_hook import run_hook  # returns _HookThread instance
 from text_sanitizer import TextSanitizer
 
-LOG = logging.getLogger("toxifilter.main")
-LOG.setLevel(logging.INFO)
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-LOG.addHandler(handler)
+Span = Tuple[int, int, str, str]  # (start, end, term, kind)
+
+# Choose how to handle toxic parts:
+# "erase" → delete toxic words
+# "mask"  → replace toxic words with '*'
+MODE = "erase"
+print(f"[HOOK] policy MODE={MODE}", flush=True)
+
+INJECT_MUTE_MS = 200       # mute listener after we inject
+ENTER_DEBOUNCE_MS = 120    # ignore rapid double-enters
 
 
-def load_config(path: str = "config.yaml") -> dict:
-    if not os.path.exists(path):
-        LOG.info("config.yaml not found, using defaults")
-        return {}
-    if yaml:
-        with open(path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    # fallback simple loader
-    with open(path, "r", encoding="utf-8") as f:
-        return json.loads(f.read())
+def _merge_spans(spans: List[Span]) -> List[Span]:
+    if not spans:
+        return []
+    spans = sorted(spans, key=lambda x: (x[0], x[1]))
+    merged: List[Span] = []
+    for st, ed, term, kind in spans:
+        if not merged:
+            merged.append((st, ed, term, kind))
+            continue
+        pst, ped, pterm, pkind = merged[-1]
+        if st <= ped:
+            merged[-1] = (pst, max(ped, ed), pterm, pkind if pkind != "ml" else kind)
+        else:
+            merged.append((st, ed, term, kind))
+    return merged
 
 
-def verify_checksums(path: str = "model/archive/checksums.txt") -> bool:
-    """
-    If a checksum helper exists in tools, prefer that. Otherwise
-    perform a conservative existence check for model files referenced in config.
-    Returns True if checks pass.
-    """
-    if not os.path.exists(path):
-        LOG.warning("checksums file not found: %s", path)
-        return False
-    if verify_checksums_from_file:
-        try:
-            ok = verify_checksums_from_file(path)
-            LOG.info("checksum helper result: %s", ok)
-            return bool(ok)
-        except Exception as e:
-            LOG.warning("verify_checksums_from_file failed: %s", e)
-            return False
-    # fallback: just return True because we assume model files are present
-    LOG.info("checksums file exists; skipping deep verification (no helper).")
-    return True
+def _erase_by_spans(raw: str, spans: List[Span]) -> str:
+    spans = _merge_spans(spans)
+    if not spans:
+        return raw
+    out, prev = [], 0
+    for s, e, *_ in spans:
+        out.append(raw[prev:s])
+        prev = e
+    out.append(raw[prev:])
+    return "".join(out)
 
 
-def run_dry_demo():
-    """
-    Run demo_sanitize.py in-process without passing CLI args.
-    If it fails, fall back to a builtin smoke demo.
-    """
-    demo_path = os.path.join("src", "demo_sanitize.py")
-    if os.path.exists(demo_path):
-        LOG.info("Running demo_sanitize.py (dry-run).")
-        try:
-            # avoid passing main's CLI args to demo
-            old_argv = sys.argv[:]
-            sys.argv = [demo_path]
-            runpy.run_path(demo_path, run_name="__main__")
-            return
-        except SystemExit:
-            return
-        except Exception as e:
-            LOG.exception("demo_sanitize.py failed: %s", e)
-        finally:
-            sys.argv = old_argv
-
-    # fallback: run a small built-in smoke check using TextSanitizer
-    LOG.info("Running built-in smoke demo (TextSanitizer).")
-    s = TextSanitizer()
-    samples = [
-        "I hate you",
-        "Have a nice day",
-        "You are a b!tch",
-        "I will kill you"
-    ]
-    for t in samples:
-        try:
-            out = s.analyze(t)
-            LOG.info("demo -> %s", json.dumps(out, ensure_ascii=False))
-        except Exception as e:
-            LOG.exception("smoke sample failed: %s", e)
+def _mask_by_spans(raw: str, spans: List[Span], ch: str = "*") -> str:
+    spans = _merge_spans(spans)
+    if not spans:
+        return raw
+    chars = list(raw)
+    for s, e, *_ in spans:
+        s = max(0, min(s, len(chars)))
+        e = max(s, min(e, len(chars)))
+        for i in range(s, e):
+            chars[i] = ch
+    return "".join(chars)
 
 
-def start_hook(no_checks: bool = False, dry_run: bool = False, config_path: str = "config.yaml"):
-    cfg = load_config(config_path)
-    LOG.info("Loading config: %s", config_path)
+def _summarize_spans(spans: List[Span]) -> Dict[str, int]:
+    c = {"exact": 0, "fuzzy": 0, "ml": 0}
+    for _, _, _, k in spans:
+        if k in c:
+            c[k] += 1
+    return c
 
-    backend = cfg.get("preferred_backend", cfg.get("preferred", "onnx"))
-    LOG.info("Selected backend: %s", backend)
 
-    if not no_checks:
-        ok = verify_checksums()
-        if not ok:
-            LOG.error("Checksum verification failed. Use --no-checks to bypass.")
-            raise SystemExit(1)
-    else:
-        LOG.info("Checksum verification skipped (--no-checks).")
+def _apply_policy(line: str, spans: List[Span]) -> str:
+    if MODE == "mask":
+        return _mask_by_spans(line, spans)
+    return _erase_by_spans(line, spans)
 
-    if dry_run:
-        # run demo and exit
-        run_dry_demo()
-        return
 
-    # Start the hook thread (non-blocking) with robust lifecycle handling
-    LOG.info("Starting keyboard_hook.run_hook() (background).")
-    hook_thread = None
+def _process_line(san: TextSanitizer, line: str):
+    res = san.analyze(line)
+    action = res["action"]
+    spans: List[Span] = res.get("spans", [])
+    ml_prob = float(res.get("ml_prob", 0.0))
+
+    kind_counts = _summarize_spans(spans)
+    print(f"[HOOK] prob={ml_prob:.3f} action={action} spans={spans}")
+    print(f"[HOOK] span_sources -> exact:{kind_counts['exact']} fuzzy:{kind_counts['fuzzy']} ml:{kind_counts['ml']}")
+
+    if action == "pass":
+        print(f"[pass] {line}", flush=True)
+        return action, line
+
+    out = _apply_policy(line, spans) if spans else line
+
+    # safety 1: downgrade if nothing to change or spans empty
+    if action == "enforce" and (not spans or out.strip() == line.strip()):
+        print(f"[warn] {line}", flush=True)
+        return "warn", line
+
+    # safety 2: ML-only spans need higher bar
+    ml_only = bool(spans) and all(k == "ml" for *_, k in spans)
+    if action == "enforce" and ml_only and ml_prob < 0.985:
+        print(f"[warn] {line}", flush=True)
+        return "warn", line
+
+    print(f"[{action}] {out}", flush=True)
+    return action, out
+
+
+def run_cli():
+    san = TextSanitizer()
+    print("keyboard_hook CLI: type text, press Enter. Ctrl+C to exit.")
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break
+        line = line.rstrip("\n")
+        _process_line(san, line)
+
+
+def run_hook():
+    san = TextSanitizer()
     try:
-        hook_thread = run_hook()  # returns a _HookThread instance
-        LOG.info("Hook thread started: %s", hook_thread)
+        from pynput import keyboard
+        from pynput.keyboard import Controller, Key
+    except Exception:
+        t = threading.Thread(target=run_cli, daemon=True)
+        t.start()
+        return t
 
-        LOG.info("Hook running. Press Ctrl+C to stop.")
-        # keep process alive until interrupted, ensure we stop thread on exit
-        while True:
-            time.sleep(0.5)
-            alive = False
-            try:
-                alive = bool(getattr(hook_thread, "is_alive", lambda: True)())
-            except Exception:
-                # if is_alive check fails, assume alive
-                alive = True
-            if not alive:
-                LOG.warning("Hook thread is not alive anymore. Exiting.")
-                break
+    kbd = Controller()
+    buffer: List[str] = []
 
-    except KeyboardInterrupt:
-        LOG.info("Stopping hook thread (KeyboardInterrupt).")
-    except Exception as e:
-        LOG.exception("Runtime exception: %s", e)
-        # fall through to cleanup and exit with non-zero
-        raise SystemExit(2)
-    finally:
-        # graceful stop
+    injecting = False          # mute while injecting
+    last_hash = None           # skip duplicates
+    last_enter_ts = 0.0        # debounce enter
+
+    def _enforce_in_active_window(original: str, replacement: str):
+        nonlocal injecting, last_hash, buffer
         try:
-            if hook_thread is not None:
-                try:
-                    if hasattr(hook_thread, "stop"):
-                        hook_thread.stop()
-                    elif hasattr(hook_thread, "listener"):
-                        try:
-                            hook_thread.listener.stop()  # pynput listener object
-                        except Exception:
-                            pass
-                except Exception:
-                    LOG.exception("Error while stopping hook thread.")
-                # small pause to let thread exit
-                time.sleep(0.25)
+            injecting = True
+            # erase original
+            for _ in original:
+                kbd.press(Key.backspace)
+                kbd.release(Key.backspace)
+            # type replacement
+            if replacement:
+                kbd.type(replacement)
+            # mute and flush
+            time.sleep(INJECT_MUTE_MS / 1000.0)
+            buffer.clear()
+            last_hash = hash(replacement or "")
+        finally:
+            injecting = False
+
+    def on_press(key):
+        nonlocal last_hash, injecting, last_enter_ts
+        try:
+            if injecting:
+                return  # ignore our synthetic keys
+
+            if key == keyboard.Key.enter:
+                now = time.time()
+                if now - last_enter_ts < (ENTER_DEBOUNCE_MS / 1000.0):
+                    return
+                last_enter_ts = now
+
+                line = "".join(buffer)
+                buffer.clear()
+                if not line.strip():
+                    return
+
+                h = hash(line)
+                if h == last_hash:
+                    return
+                last_hash = h
+
+                action, out = _process_line(san, line)
+
+                # skip no-op injections
+                if action in ("warn", "enforce"):
+                    if out.strip() == line.strip():
+                        return
+                    _enforce_in_active_window(line, out)
+                return
+
+            if key == keyboard.Key.backspace:
+                if buffer:
+                    buffer.pop()
+                return
+
+            ch = getattr(key, "char", None)
+            if ch is not None:
+                buffer.append(ch)
+
+        except Exception as ex:
+            with open("hook_error.log", "a", encoding="utf-8") as fh:
+                fh.write(f"[on_press] {type(ex).__name__}: {ex}\n")
+
+    from pynput import keyboard
+    listener = keyboard.Listener(on_press=on_press)
+
+    def _run_and_join():
+        try:
+            listener.start()
+            listener.join()
+        except Exception as e:
+            with open("hook_error.log", "a", encoding="utf-8") as fh:
+                fh.write(f"[listener-thread] {type(e).__name__}: {e}\n")
+            run_cli()
+
+    thread = threading.Thread(target=_run_and_join, daemon=True)
+
+    def _stop():
+        try:
+            listener.stop()
         except Exception:
             pass
-    LOG.info("Main exiting.")
-    raise SystemExit(0)
 
+    thread.listener = listener
+    thread.stop = _stop
+    thread.is_alive = lambda: listener.is_alive()
+    thread.start()
+    return thread
 
-def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="Toxifilter main runtime launcher")
-    p.add_argument("--no-checks", action="store_true", help="skip checksum verification")
-    p.add_argument("--dry-run", action="store_true", help="run demo and exit")
-    p.add_argument("--config", type=str, default="config.yaml", help="path to config.yaml")
-    return p.parse_args(argv)
-
-
-def main(argv=None):
-    args = parse_args(argv)
-    # set logging level from env if provided
-    lvl = os.environ.get("TOXIFILTER_LOG", "INFO").upper()
-    LOG.setLevel(getattr(logging, lvl, logging.INFO))
-    start_hook(no_checks=args.no_checks, dry_run=args.dry_run, config_path=args.config)
+def main():
+    t = run_hook()           # returns a Thread (hook listener running)
+    try:
+        t.join()             # keep process alive
+    except KeyboardInterrupt:
+        if hasattr(t, "stop"):
+            t.stop()
 
 
 if __name__ == "__main__":

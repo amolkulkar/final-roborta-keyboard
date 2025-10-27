@@ -1,18 +1,19 @@
-preferred_backend: "onnx"
-device: "cpu"
+preferred_backend: onnx
+device: cpu
 max_length: 128
-tokenizer_name: "roberta-base"
+tokenizer_name: roberta-base
+
+# suggestions/notifier removed
+enable_suggestions: false
+enable_notifier: false
 
 prob_gate: 0.50
 escalation:
-  suggest: 0.50
   warn: 0.70
   enforce: 0.95
 
-
-
 models:
   combined:
-    onnx: "models/exports/model.onnx"
-    torchscript: "models/exports/model_traced.pt"
-    hf_dir: "models/roberta_saved"
+    onnx: models/exports/model.onnx
+    torchscript: models/exports/model_traced.pt
+    hf_dir: models/roberta_saved
